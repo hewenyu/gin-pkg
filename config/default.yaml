@@ -1,0 +1,33 @@
+server:
+  port: 8080
+  readTimeout: 10s
+  writeTimeout: 10s
+
+database:
+  driver: postgres
+  host: localhost
+  port: 5432
+  username: postgres
+  password: postgres
+  database: ginpkg
+  sslMode: disable
+
+redis:
+  host: localhost
+  port: 6379
+  password: ""
+  db: 0
+
+auth:
+  accessTokenSecret: "your-access-token-secret-key-change-this"
+  refreshTokenSecret: "your-refresh-token-secret-key-change-this"
+  accessTokenDuration: 24h
+  refreshTokenDuration: 720h  # 30 days
+  enableRegistration: true
+  defaultAccessTokenExp: 86400     # 24 hours in seconds
+  defaultRefreshTokenExp: 2592000  # 30 days in seconds
+
+security:
+  timestampValidityWindow: 60s
+  nonceValidityDuration: 2m
+  signatureSecret: "your-signature-secret-key-change-this" 
