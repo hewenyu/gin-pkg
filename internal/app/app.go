@@ -46,8 +46,8 @@ func NewApp(configPath string) (*App, error) {
 		return nil, fmt.Errorf("failed to load configuration: %w", err)
 	}
 
-	// Set up Gin
-	router := gin.Default()
+	// 使用我们的日志记录器创建Gin引擎
+	router := logger.GetGinEngine()
 
 	return &App{
 		config: cfg,
@@ -160,6 +160,10 @@ func (a *App) Cleanup() {
 		a.redisClient.Close()
 		logger.Debug("Redis connection closed")
 	}
+
+	// 确保日志缓冲区被刷新
+	logger.Debug("Performing final cleanup")
+	logger.Sync()
 }
 
 // setupDatabase initializes the database connection

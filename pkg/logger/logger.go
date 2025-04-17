@@ -1,10 +1,11 @@
 package logger
 
 import (
-	"fmt"
-	"io"
-	"log"
 	"os"
+	"time"
+
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 // Logger defines the interface for logging operations
@@ -19,6 +20,8 @@ type Logger interface {
 	Warnf(format string, v ...interface{})
 	Errorf(format string, v ...interface{})
 	Fatalf(format string, v ...interface{})
+	// 增加sync方法用于刷新缓冲日志
+	Sync() error
 }
 
 // Level represents a logging level
@@ -37,112 +40,172 @@ const (
 	FatalLevel
 )
 
-// DefaultLogger implements Logger interface with standard log
-type DefaultLogger struct {
-	debug *log.Logger
-	info  *log.Logger
-	warn  *log.Logger
-	error *log.Logger
-	fatal *log.Logger
-	level Level
+// ZapLogger implements Logger interface with zap
+type ZapLogger struct {
+	logger *zap.Logger
+	sugar  *zap.SugaredLogger
+	level  Level
 }
 
-// NewDefaultLogger creates a new logger instance
-func NewDefaultLogger(out io.Writer, level Level) Logger {
-	if out == nil {
-		out = os.Stdout
-	}
-
-	return &DefaultLogger{
-		debug: log.New(out, formatPrefix("DEBUG"), log.Ldate|log.Ltime|log.Lshortfile),
-		info:  log.New(out, formatPrefix("INFO"), log.Ldate|log.Ltime|log.Lshortfile),
-		warn:  log.New(out, formatPrefix("WARN"), log.Ldate|log.Ltime|log.Lshortfile),
-		error: log.New(out, formatPrefix("ERROR"), log.Ldate|log.Ltime|log.Lshortfile),
-		fatal: log.New(out, formatPrefix("FATAL"), log.Ldate|log.Ltime|log.Lshortfile),
-		level: level,
+// toZapLevel converts our Level to zapcore.Level
+func toZapLevel(level Level) zapcore.Level {
+	switch level {
+	case DebugLevel:
+		return zapcore.DebugLevel
+	case InfoLevel:
+		return zapcore.InfoLevel
+	case WarnLevel:
+		return zapcore.WarnLevel
+	case ErrorLevel:
+		return zapcore.ErrorLevel
+	case FatalLevel:
+		return zapcore.FatalLevel
+	default:
+		return zapcore.InfoLevel
 	}
 }
 
-// formatPrefix formats a log level prefix
-func formatPrefix(level string) string {
-	return fmt.Sprintf("[%s] ", level)
+// NewZapLogger creates a new logger instance using zap
+func NewZapLogger(level Level, development bool) Logger {
+	encoderConfig := zapcore.EncoderConfig{
+		TimeKey:        "time",
+		LevelKey:       "level",
+		NameKey:        "logger",
+		CallerKey:      "caller",
+		FunctionKey:    zapcore.OmitKey,
+		MessageKey:     "msg",
+		StacktraceKey:  "stacktrace",
+		LineEnding:     zapcore.DefaultLineEnding,
+		EncodeLevel:    zapcore.CapitalLevelEncoder,
+		EncodeTime:     zapcore.ISO8601TimeEncoder,
+		EncodeDuration: zapcore.StringDurationEncoder,
+		EncodeCaller:   zapcore.ShortCallerEncoder,
+	}
+
+	zapLevel := toZapLevel(level)
+
+	var core zapcore.Core
+	if development {
+		// 在开发模式下使用控制台输出
+		consoleEncoder := zapcore.NewConsoleEncoder(encoderConfig)
+		core = zapcore.NewCore(consoleEncoder, zapcore.AddSync(os.Stdout), zapLevel)
+	} else {
+		// 在生产模式下使用JSON输出
+		jsonEncoder := zapcore.NewJSONEncoder(encoderConfig)
+		core = zapcore.NewCore(jsonEncoder, zapcore.AddSync(os.Stdout), zapLevel)
+	}
+
+	// 添加调用者信息
+	logger := zap.New(core, zap.AddCaller(), zap.AddCallerSkip(2))
+
+	return &ZapLogger{
+		logger: logger,
+		sugar:  logger.Sugar(),
+		level:  level,
+	}
 }
 
 // Debug logs a debug message
-func (l *DefaultLogger) Debug(v ...interface{}) {
-	if l.level <= DebugLevel {
-		l.debug.Output(2, fmt.Sprint(v...))
-	}
+func (l *ZapLogger) Debug(v ...interface{}) {
+	l.sugar.Debug(v...)
 }
 
 // Debugf logs a formatted debug message
-func (l *DefaultLogger) Debugf(format string, v ...interface{}) {
-	if l.level <= DebugLevel {
-		l.debug.Output(2, fmt.Sprintf(format, v...))
-	}
+func (l *ZapLogger) Debugf(format string, v ...interface{}) {
+	l.sugar.Debugf(format, v...)
 }
 
 // Info logs an info message
-func (l *DefaultLogger) Info(v ...interface{}) {
-	if l.level <= InfoLevel {
-		l.info.Output(2, fmt.Sprint(v...))
-	}
+func (l *ZapLogger) Info(v ...interface{}) {
+	l.sugar.Info(v...)
 }
 
 // Infof logs a formatted info message
-func (l *DefaultLogger) Infof(format string, v ...interface{}) {
-	if l.level <= InfoLevel {
-		l.info.Output(2, fmt.Sprintf(format, v...))
-	}
+func (l *ZapLogger) Infof(format string, v ...interface{}) {
+	l.sugar.Infof(format, v...)
 }
 
 // Warn logs a warning message
-func (l *DefaultLogger) Warn(v ...interface{}) {
-	if l.level <= WarnLevel {
-		l.warn.Output(2, fmt.Sprint(v...))
-	}
+func (l *ZapLogger) Warn(v ...interface{}) {
+	l.sugar.Warn(v...)
 }
 
 // Warnf logs a formatted warning message
-func (l *DefaultLogger) Warnf(format string, v ...interface{}) {
-	if l.level <= WarnLevel {
-		l.warn.Output(2, fmt.Sprintf(format, v...))
-	}
+func (l *ZapLogger) Warnf(format string, v ...interface{}) {
+	l.sugar.Warnf(format, v...)
 }
 
 // Error logs an error message
-func (l *DefaultLogger) Error(v ...interface{}) {
-	if l.level <= ErrorLevel {
-		l.error.Output(2, fmt.Sprint(v...))
-	}
+func (l *ZapLogger) Error(v ...interface{}) {
+	l.sugar.Error(v...)
 }
 
 // Errorf logs a formatted error message
-func (l *DefaultLogger) Errorf(format string, v ...interface{}) {
-	if l.level <= ErrorLevel {
-		l.error.Output(2, fmt.Sprintf(format, v...))
-	}
+func (l *ZapLogger) Errorf(format string, v ...interface{}) {
+	l.sugar.Errorf(format, v...)
 }
 
 // Fatal logs a fatal message and exits the program
-func (l *DefaultLogger) Fatal(v ...interface{}) {
-	if l.level <= FatalLevel {
-		l.fatal.Output(2, fmt.Sprint(v...))
-		os.Exit(1)
-	}
+func (l *ZapLogger) Fatal(v ...interface{}) {
+	l.sugar.Fatal(v...)
 }
 
 // Fatalf logs a formatted fatal message and exits the program
-func (l *DefaultLogger) Fatalf(format string, v ...interface{}) {
-	if l.level <= FatalLevel {
-		l.fatal.Output(2, fmt.Sprintf(format, v...))
-		os.Exit(1)
+func (l *ZapLogger) Fatalf(format string, v ...interface{}) {
+	l.sugar.Fatalf(format, v...)
+}
+
+// Sync flushes any buffered log entries
+func (l *ZapLogger) Sync() error {
+	return l.logger.Sync()
+}
+
+// For compatibility with the original logger
+// DefaultLogger is now an alias for ZapLogger
+type DefaultLogger = ZapLogger
+
+// NewDefaultLogger creates a new logger instance with console output
+func NewDefaultLogger(out zapcore.WriteSyncer, level Level) Logger {
+	encoderConfig := zapcore.EncoderConfig{
+		TimeKey:        "time",
+		LevelKey:       "level",
+		NameKey:        "logger",
+		CallerKey:      "caller",
+		FunctionKey:    zapcore.OmitKey,
+		MessageKey:     "msg",
+		StacktraceKey:  "stacktrace",
+		LineEnding:     zapcore.DefaultLineEnding,
+		EncodeLevel:    zapcore.CapitalLevelEncoder,
+		EncodeTime:     zapcore.TimeEncoderOfLayout(time.RFC3339),
+		EncodeDuration: zapcore.StringDurationEncoder,
+		EncodeCaller:   zapcore.ShortCallerEncoder,
+	}
+
+	if out == nil {
+		out = zapcore.AddSync(os.Stdout)
+	}
+
+	zapLevel := toZapLevel(level)
+
+	core := zapcore.NewCore(
+		zapcore.NewConsoleEncoder(encoderConfig),
+		out,
+		zapLevel,
+	)
+
+	// 添加调用者信息
+	logger := zap.New(core, zap.AddCaller(), zap.AddCallerSkip(2))
+
+	return &ZapLogger{
+		logger: logger,
+		sugar:  logger.Sugar(),
+		level:  level,
 	}
 }
 
 // Global logger instance
 var (
-	std = NewDefaultLogger(os.Stdout, InfoLevel)
+	std = NewZapLogger(InfoLevel, true)
 )
 
 // SetDefaultLogger sets the default global logger
@@ -198,4 +261,9 @@ func Fatal(v ...interface{}) {
 // Fatalf logs a formatted fatal message and exits the program using the default logger
 func Fatalf(format string, v ...interface{}) {
 	std.Fatalf(format, v...)
+}
+
+// Sync flushes any buffered log entries
+func Sync() error {
+	return std.Sync()
 }
