@@ -6,17 +6,17 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/hewenyu/gin-pkg/internal/model"
-	"github.com/hewenyu/gin-pkg/internal/service"
-	"github.com/hewenyu/gin-pkg/pkg/auth"
+	"github.com/hewenyu/gin-pkg/internal/service/user"
+	"github.com/hewenyu/gin-pkg/pkg/auth/security"
 )
 
 type AuthController struct {
-	userService        service.UserService
-	securityService    auth.SecurityService
+	userService        user.UserService
+	securityService    security.SecurityService
 	enableRegistration bool
 }
 
-func NewAuthController(userService service.UserService, securityService auth.SecurityService, enableRegistration bool) *AuthController {
+func NewAuthController(userService user.UserService, securityService security.SecurityService, enableRegistration bool) *AuthController {
 	return &AuthController{
 		userService:        userService,
 		securityService:    securityService,
@@ -55,7 +55,7 @@ func (c *AuthController) Register(ctx *gin.Context) {
 		Username:  user.Username,
 		Role:      user.Role,
 		Active:    user.Active,
-		AvatarURL: user.AvatarURL,
+		AvatarURL: &user.AvatarURL,
 		CreatedAt: user.CreatedAt.Format(time.RFC3339),
 		UpdatedAt: user.UpdatedAt.Format(time.RFC3339),
 	}
@@ -84,7 +84,7 @@ func (c *AuthController) Login(ctx *gin.Context) {
 		Username:  user.Username,
 		Role:      user.Role,
 		Active:    user.Active,
-		AvatarURL: user.AvatarURL,
+		AvatarURL: &user.AvatarURL,
 		CreatedAt: user.CreatedAt.Format(time.RFC3339),
 		UpdatedAt: user.UpdatedAt.Format(time.RFC3339),
 	}

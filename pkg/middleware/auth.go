@@ -5,11 +5,11 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/hewenyu/gin-pkg/pkg/auth"
+	"github.com/hewenyu/gin-pkg/pkg/auth/jwt"
 )
 
 // AuthMiddleware is middleware that validates JWT tokens
-func AuthMiddleware(tokenService auth.TokenService) gin.HandlerFunc {
+func AuthMiddleware(tokenService jwt.TokenService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
@@ -30,7 +30,7 @@ func AuthMiddleware(tokenService auth.TokenService) gin.HandlerFunc {
 		tokenString := parts[1]
 
 		// Validate the token
-		claims, err := tokenService.ValidateToken(tokenString, auth.AccessToken)
+		claims, err := tokenService.ValidateToken(tokenString, jwt.AccessToken)
 		if err != nil {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid access token"})
 			c.Abort()
@@ -48,7 +48,7 @@ func AuthMiddleware(tokenService auth.TokenService) gin.HandlerFunc {
 }
 
 // OptionalAuthMiddleware is middleware that validates JWT tokens if present
-func OptionalAuthMiddleware(tokenService auth.TokenService) gin.HandlerFunc {
+func OptionalAuthMiddleware(tokenService jwt.TokenService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
@@ -67,7 +67,7 @@ func OptionalAuthMiddleware(tokenService auth.TokenService) gin.HandlerFunc {
 		tokenString := parts[1]
 
 		// Validate the token
-		claims, err := tokenService.ValidateToken(tokenString, auth.AccessToken)
+		claims, err := tokenService.ValidateToken(tokenString, jwt.AccessToken)
 		if err != nil {
 			c.Next()
 			return

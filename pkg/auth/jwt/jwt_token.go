@@ -1,4 +1,4 @@
-package auth
+package jwt
 
 import (
 	"errors"
@@ -8,42 +8,6 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 )
-
-// TokenType represents the type of JWT token
-type TokenType string
-
-const (
-	// AccessToken is used for API access
-	AccessToken TokenType = "access"
-	// RefreshToken is used to get a new access token
-	RefreshToken TokenType = "refresh"
-)
-
-// Claims represents the JWT claims
-type Claims struct {
-	UserID    int    `json:"user_id"`
-	Email     string `json:"email"`
-	Role      string `json:"role"`
-	TokenType string `json:"token_type"`
-	TokenID   string `json:"token_id"`
-	jwt.RegisteredClaims
-}
-
-// TokenPair contains both access and refresh tokens
-type TokenPair struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
-	ExpiresIn    int64  `json:"expires_in"`
-}
-
-// TokenService defines the interface for JWT token operations
-type TokenService interface {
-	GenerateTokenPair(userID int, email, role string) (*TokenPair, error)
-	ValidateToken(tokenString string, tokenType TokenType) (*Claims, error)
-	RefreshTokens(refreshToken string) (*TokenPair, error)
-	BlacklistToken(tokenID string, expiration time.Duration) error
-	IsTokenBlacklisted(tokenID string) (bool, error)
-}
 
 // JWTService implements TokenService
 type JWTService struct {
@@ -81,7 +45,7 @@ func NewJWTService(
 }
 
 // GenerateTokenPair creates a new pair of access and refresh tokens
-func (s *JWTService) GenerateTokenPair(userID int, email, role string) (*TokenPair, error) {
+func (s *JWTService) GenerateTokenPair(userID string, email, role string) (*TokenPair, error) {
 	// Generate access token
 	accessTokenID := uuid.New().String()
 	accessTokenExpiration := time.Now().Add(s.accessTokenDuration)
@@ -96,7 +60,7 @@ func (s *JWTService) GenerateTokenPair(userID int, email, role string) (*TokenPa
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			NotBefore: jwt.NewNumericDate(time.Now()),
 			Issuer:    "gin-pkg",
-			Subject:   fmt.Sprintf("%d", userID),
+			Subject:   userID,
 			ID:        accessTokenID,
 		},
 	}
@@ -121,7 +85,7 @@ func (s *JWTService) GenerateTokenPair(userID int, email, role string) (*TokenPa
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			NotBefore: jwt.NewNumericDate(time.Now()),
 			Issuer:    "gin-pkg",
-			Subject:   fmt.Sprintf("%d", userID),
+			Subject:   userID,
 			ID:        refreshTokenID,
 		},
 	}

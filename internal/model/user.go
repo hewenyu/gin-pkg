@@ -35,7 +35,7 @@ type ChangePasswordInput struct {
 
 // UserResponse is the model returned to clients
 type UserResponse struct {
-	ID        int     `json:"id"`
+	ID        string  `json:"id"`
 	Email     string  `json:"email"`
 	Username  string  `json:"username"`
 	Role      string  `json:"role"`

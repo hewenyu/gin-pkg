@@ -5,11 +5,11 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/hewenyu/gin-pkg/pkg/auth"
+	"github.com/hewenyu/gin-pkg/pkg/auth/security"
 )
 
 // SecurityMiddleware validates request timestamps, nonces, and signatures
-func SecurityMiddleware(securityService auth.SecurityService, timestampWindow time.Duration) gin.HandlerFunc {
+func SecurityMiddleware(securityService security.SecurityService, timestampWindow time.Duration) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Extract parameters (from headers or query params)
 		timestamp := getParameter(c, "timestamp", "X-Timestamp")

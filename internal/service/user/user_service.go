@@ -1,4 +1,4 @@
-package service
+package user
 
 import (
 	"context"
@@ -9,38 +9,26 @@ import (
 	"github.com/hewenyu/gin-pkg/internal/ent"
 	"github.com/hewenyu/gin-pkg/internal/ent/user"
 	"github.com/hewenyu/gin-pkg/internal/model"
-	"github.com/hewenyu/gin-pkg/pkg/auth"
+	"github.com/hewenyu/gin-pkg/pkg/auth/jwt"
 	"golang.org/x/crypto/bcrypt"
 )
 
-// UserService defines the interface for user operations
-type UserService interface {
-	CreateUser(ctx context.Context, input model.CreateUserInput) (*ent.User, error)
-	GetUserByID(ctx context.Context, id int) (*ent.User, error)
-	GetUserByEmail(ctx context.Context, email string) (*ent.User, error)
-	UpdateUser(ctx context.Context, id int, input model.UpdateUserInput) (*ent.User, error)
-	DeleteUser(ctx context.Context, id int) error
-	Login(ctx context.Context, email, password string) (*auth.TokenPair, *ent.User, error)
-	RefreshToken(ctx context.Context, refreshToken string) (*auth.TokenPair, error)
-	UpdatePassword(ctx context.Context, userID int, currentPassword, newPassword string) error
-}
-
 // DefaultUserService implements UserService
-type DefaultUserService struct {
+type DBUserService struct {
 	client       *ent.Client
-	tokenService auth.TokenService
+	tokenService jwt.TokenService
 }
 
 // NewUserService creates a new user service
-func NewUserService(client *ent.Client, tokenService auth.TokenService) UserService {
-	return &DefaultUserService{
+func NewUserService(client *ent.Client, tokenService jwt.TokenService) UserService {
+	return &DBUserService{
 		client:       client,
 		tokenService: tokenService,
 	}
 }
 
 // CreateUser creates a new user
-func (s *DefaultUserService) CreateUser(ctx context.Context, input model.CreateUserInput) (*ent.User, error) {
+func (s *DBUserService) CreateUser(ctx context.Context, input model.CreateUserInput) (*ent.User, error) {
 	// Check if user with the same email already exists
 	exists, err := s.client.User.Query().Where(user.Email(input.Email)).Exist(ctx)
 	if err != nil {
@@ -80,7 +68,7 @@ func (s *DefaultUserService) CreateUser(ctx context.Context, input model.CreateU
 }
 
 // GetUserByID gets a user by ID
-func (s *DefaultUserService) GetUserByID(ctx context.Context, id int) (*ent.User, error) {
+func (s *DBUserService) GetUserByID(ctx context.Context, id string) (*ent.User, error) {
 	user, err := s.client.User.Get(ctx, id)
 	if err != nil {
 		if ent.IsNotFound(err) {
@@ -92,7 +80,7 @@ func (s *DefaultUserService) GetUserByID(ctx context.Context, id int) (*ent.User
 }
 
 // GetUserByEmail gets a user by email
-func (s *DefaultUserService) GetUserByEmail(ctx context.Context, email string) (*ent.User, error) {
+func (s *DBUserService) GetUserByEmail(ctx context.Context, email string) (*ent.User, error) {
 	user, err := s.client.User.Query().Where(user.Email(email)).Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
@@ -104,7 +92,7 @@ func (s *DefaultUserService) GetUserByEmail(ctx context.Context, email string) (
 }
 
 // UpdateUser updates a user
-func (s *DefaultUserService) UpdateUser(ctx context.Context, id int, input model.UpdateUserInput) (*ent.User, error) {
+func (s *DBUserService) UpdateUser(ctx context.Context, id string, input model.UpdateUserInput) (*ent.User, error) {
 	// Get the user
 	userToUpdate, err := s.client.User.Get(ctx, id)
 	if err != nil {
@@ -155,7 +143,7 @@ func (s *DefaultUserService) UpdateUser(ctx context.Context, id int, input model
 }
 
 // DeleteUser deletes a user
-func (s *DefaultUserService) DeleteUser(ctx context.Context, id int) error {
+func (s *DBUserService) DeleteUser(ctx context.Context, id string) error {
 	err := s.client.User.DeleteOneID(id).Exec(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
@@ -167,7 +155,7 @@ func (s *DefaultUserService) DeleteUser(ctx context.Context, id int) error {
 }
 
 // Login authenticates a user and returns JWT tokens
-func (s *DefaultUserService) Login(ctx context.Context, email, password string) (*auth.TokenPair, *ent.User, error) {
+func (s *DBUserService) Login(ctx context.Context, email, password string) (*jwt.TokenPair, *ent.User, error) {
 	// Get the user by email
 	user, err := s.GetUserByEmail(ctx, email)
 	if err != nil {
@@ -205,12 +193,12 @@ func (s *DefaultUserService) Login(ctx context.Context, email, password string) 
 }
 
 // RefreshToken refreshes an access token using a refresh token
-func (s *DefaultUserService) RefreshToken(ctx context.Context, refreshToken string) (*auth.TokenPair, error) {
+func (s *DBUserService) RefreshToken(ctx context.Context, refreshToken string) (*jwt.TokenPair, error) {
 	return s.tokenService.RefreshTokens(refreshToken)
 }
 
 // UpdatePassword updates a user's password
-func (s *DefaultUserService) UpdatePassword(ctx context.Context, userID int, currentPassword, newPassword string) error {
+func (s *DBUserService) UpdatePassword(ctx context.Context, userID string, currentPassword, newPassword string) error {
 	// Get the user
 	user, err := s.GetUserByID(ctx, userID)
 	if err != nil {
