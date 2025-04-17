@@ -15,6 +15,7 @@ import (
 	"github.com/hewenyu/gin-pkg/config"
 	v1 "github.com/hewenyu/gin-pkg/internal/api/v1"
 	"github.com/hewenyu/gin-pkg/internal/ent"
+	"github.com/hewenyu/gin-pkg/internal/service/auth"
 	"github.com/hewenyu/gin-pkg/internal/service/user"
 	"github.com/hewenyu/gin-pkg/pkg/auth/jwt"
 	"github.com/hewenyu/gin-pkg/pkg/auth/security"
@@ -38,60 +39,21 @@ func main() {
 	// Set up Gin
 	r := gin.Default()
 
-	// Connect to database
-	dbURL := fmt.Sprintf(
-		"postgresql://%s:%s@%s:%d/%s?sslmode=%s",
-		cfg.Database.Username,
-		cfg.Database.Password,
-		cfg.Database.Host,
-		cfg.Database.Port,
-		cfg.Database.Database,
-		cfg.Database.SSLMode,
-	)
-	client, err := ent.Open(cfg.Database.Driver, dbURL)
-	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
-	}
+	// Initialize services
+	client := setupDatabase(cfg)
 	defer client.Close()
 
-	// Run schema migrations
-	if err := client.Schema.Create(context.Background()); err != nil {
-		log.Fatalf("Failed to run database migrations: %v", err)
-	}
-
-	// Set up Redis client
-	redis, err := util.NewRedisClient(
-		cfg.Redis.Host,
-		cfg.Redis.Port,
-		cfg.Redis.Password,
-		cfg.Redis.DB,
-	)
-	if err != nil {
-		log.Fatalf("Failed to connect to Redis: %v", err)
-	}
+	redis := setupRedis(cfg)
 	defer redis.Close()
 
-	// Initialize services
-	tokenService := jwt.NewJWTService(
-		cfg.Auth.AccessTokenSecret,
-		cfg.Auth.RefreshTokenSecret,
-		cfg.Auth.AccessTokenDuration,
-		cfg.Auth.RefreshTokenDuration,
-		cfg.Auth.DefaultAccessTokenExp,
-		cfg.Auth.DefaultRefreshTokenExp,
-		redis.BlacklistToken,
-		redis.IsTokenBlacklisted,
-	)
-
-	securityService := security.NewSecurityService(
-		cfg.Security.SignatureSecret,
-		cfg.Security.NonceValidityDuration,
-		redis.StoreNonce,
-		redis.GetNonce,
-		redis.InvalidateNonce,
-	)
-
+	// Initialize core services
+	tokenService := setupTokenService(cfg, redis)
+	securityService := setupSecurityService(cfg, redis)
 	userService := user.NewUserService(client, tokenService)
+
+	// Create auth service but using the user service implementation for now
+	// This allows us to gradually migrate functionality to the auth service
+	_ = auth.NewAuthService(userService, tokenService, securityService)
 
 	// Initialize middleware
 	authMiddleware := middleware.AuthMiddleware(tokenService)
@@ -111,16 +73,85 @@ func main() {
 	userController.RegisterRoutes(apiV1, authMiddleware, adminMiddleware)
 
 	// Start server
+	startServer(r, cfg.Server)
+}
+
+// setupDatabase initializes the database connection
+func setupDatabase(cfg *config.Config) *ent.Client {
+	dbURL := fmt.Sprintf(
+		"postgresql://%s:%s@%s:%d/%s?sslmode=%s",
+		cfg.Database.Username,
+		cfg.Database.Password,
+		cfg.Database.Host,
+		cfg.Database.Port,
+		cfg.Database.Database,
+		cfg.Database.SSLMode,
+	)
+	client, err := ent.Open(cfg.Database.Driver, dbURL)
+	if err != nil {
+		log.Fatalf("Failed to connect to database: %v", err)
+	}
+
+	// Run schema migrations
+	if err := client.Schema.Create(context.Background()); err != nil {
+		log.Fatalf("Failed to run database migrations: %v", err)
+	}
+
+	return client
+}
+
+// setupRedis initializes the Redis connection
+func setupRedis(cfg *config.Config) *util.RedisClient {
+	redis, err := util.NewRedisClient(
+		cfg.Redis.Host,
+		cfg.Redis.Port,
+		cfg.Redis.Password,
+		cfg.Redis.DB,
+	)
+	if err != nil {
+		log.Fatalf("Failed to connect to Redis: %v", err)
+	}
+	return redis
+}
+
+// setupTokenService initializes the JWT token service
+func setupTokenService(cfg *config.Config, redis *util.RedisClient) jwt.TokenService {
+	return jwt.NewJWTService(
+		cfg.Auth.AccessTokenSecret,
+		cfg.Auth.RefreshTokenSecret,
+		cfg.Auth.AccessTokenDuration,
+		cfg.Auth.RefreshTokenDuration,
+		cfg.Auth.DefaultAccessTokenExp,
+		cfg.Auth.DefaultRefreshTokenExp,
+		redis.BlacklistToken,
+		redis.IsTokenBlacklisted,
+	)
+}
+
+// setupSecurityService initializes the security service
+func setupSecurityService(cfg *config.Config, redis *util.RedisClient) security.SecurityService {
+	return security.NewSecurityService(
+		cfg.Security.SignatureSecret,
+		cfg.Security.NonceValidityDuration,
+		redis.StoreNonce,
+		redis.GetNonce,
+		redis.InvalidateNonce,
+	)
+}
+
+// startServer starts the HTTP server
+func startServer(handler http.Handler, serverCfg config.ServerConfig) {
+	// Start server
 	srv := &http.Server{
-		Addr:         fmt.Sprintf(":%d", cfg.Server.Port),
-		Handler:      r,
-		ReadTimeout:  cfg.Server.ReadTimeout,
-		WriteTimeout: cfg.Server.WriteTimeout,
+		Addr:         fmt.Sprintf(":%d", serverCfg.Port),
+		Handler:      handler,
+		ReadTimeout:  serverCfg.ReadTimeout,
+		WriteTimeout: serverCfg.WriteTimeout,
 	}
 
 	// Run server in a goroutine so that it doesn't block
 	go func() {
-		log.Printf("Server listening on port %d", cfg.Server.Port)
+		log.Printf("Server listening on port %d", serverCfg.Port)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Failed to start server: %v", err)
 		}
