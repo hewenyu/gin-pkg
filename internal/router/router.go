@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	v1 "github.com/hewenyu/gin-pkg/internal/api/v1"
+	v1 "github.com/hewenyu/gin-pkg/internal/router/api/v1"
 	"github.com/hewenyu/gin-pkg/internal/service/user"
 	"github.com/hewenyu/gin-pkg/pkg/auth/jwt"
 	"github.com/hewenyu/gin-pkg/pkg/auth/security"
