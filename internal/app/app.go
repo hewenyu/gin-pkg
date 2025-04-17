@@ -12,10 +12,12 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/hewenyu/gin-pkg/config"
 	"github.com/hewenyu/gin-pkg/internal/ent"
+	"github.com/hewenyu/gin-pkg/internal/ent/user"
+	"github.com/hewenyu/gin-pkg/internal/model"
 	"github.com/hewenyu/gin-pkg/internal/router"
 	"github.com/hewenyu/gin-pkg/internal/service/auth"
 	"github.com/hewenyu/gin-pkg/internal/service/factory"
-	"github.com/hewenyu/gin-pkg/internal/service/user"
+	userService "github.com/hewenyu/gin-pkg/internal/service/user"
 	"github.com/hewenyu/gin-pkg/pkg/auth/jwt"
 	"github.com/hewenyu/gin-pkg/pkg/auth/security"
 	"github.com/hewenyu/gin-pkg/pkg/logger"
@@ -33,7 +35,7 @@ type App struct {
 	serviceFactory  *factory.ServiceFactory
 	tokenService    jwt.TokenService
 	securityService security.SecurityService
-	userService     user.UserService
+	userService     userService.UserService
 	authService     auth.AuthService
 	server          *http.Server
 }
@@ -98,6 +100,13 @@ func (a *App) Initialize() error {
 	a.authService = a.serviceFactory.CreateAuthService(a.userService, a.tokenService, a.securityService)
 	logger.Debug("User and auth services initialized")
 
+	// 检查并创建默认管理员账户
+	if a.config.Auth.CreateDefaultAdmin {
+		if err := a.ensureAdminUser(); err != nil {
+			logger.Warnf("Failed to create default admin user: %v", err)
+		}
+	}
+
 	// Set up routes
 	router.Setup(
 		a.router,
@@ -118,6 +127,47 @@ func (a *App) Initialize() error {
 	}
 	logger.Info("HTTP server initialized")
 
+	return nil
+}
+
+// ensureAdminUser 检查并创建默认管理员账户
+func (a *App) ensureAdminUser() error {
+	ctx := context.Background()
+
+	// 首先检查管理员账户是否已存在
+	adminEmail := a.config.Auth.DefaultAdminEmail
+	exists, err := a.dbClient.User.Query().
+		Where(user.Email(adminEmail)).
+		Exist(ctx)
+
+	if err != nil {
+		return fmt.Errorf("failed to check if admin user exists: %w", err)
+	}
+
+	// 如果管理员已存在，则不需要创建
+	if exists {
+		logger.Info("Admin user already exists, skipping creation")
+		return nil
+	}
+
+	// 创建管理员账户
+	logger.Info("Creating default admin user")
+
+	// 准备创建用户的输入
+	input := model.CreateUserInput{
+		Email:    a.config.Auth.DefaultAdminEmail,
+		Username: a.config.Auth.DefaultAdminUsername,
+		Password: a.config.Auth.DefaultAdminPassword,
+		Role:     "admin", // 设置为管理员角色
+	}
+
+	// 创建用户
+	_, err = a.userService.CreateUser(ctx, input)
+	if err != nil {
+		return fmt.Errorf("failed to create admin user: %w", err)
+	}
+
+	logger.Info("Default admin user created successfully")
 	return nil
 }
 

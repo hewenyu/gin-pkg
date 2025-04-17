@@ -9,7 +9,7 @@ database:
   port: 5432
   username: postgres
   password: postgres
-  database: ginpkg
+  database: ha_ai_home
   sslMode: disable
 
 redis:
@@ -26,6 +26,11 @@ auth:
   enableRegistration: true
   defaultAccessTokenExp: 86400     # 24 hours in seconds
   defaultRefreshTokenExp: 2592000  # 30 days in seconds
+  # 默认管理员账户配置
+  defaultAdminEmail: "admin@example.com"
+  defaultAdminUsername: "Admin"
+  defaultAdminPassword: "admin123456"
+  createDefaultAdmin: true
 
 security:
   timestampValidityWindow: 60s

@@ -46,6 +46,10 @@ type AuthConfig struct {
 	EnableRegistration     bool          `mapstructure:"enableRegistration"`
 	DefaultAccessTokenExp  int64         `mapstructure:"defaultAccessTokenExp"`
 	DefaultRefreshTokenExp int64         `mapstructure:"defaultRefreshTokenExp"`
+	DefaultAdminEmail      string        `mapstructure:"defaultAdminEmail"`
+	DefaultAdminUsername   string        `mapstructure:"defaultAdminUsername"`
+	DefaultAdminPassword   string        `mapstructure:"defaultAdminPassword"`
+	CreateDefaultAdmin     bool          `mapstructure:"createDefaultAdmin"`
 }
 
 type SecurityConfig struct {
@@ -86,6 +90,15 @@ func Load(configPath string) (*Config, error) {
 	}
 	if config.Auth.DefaultRefreshTokenExp == 0 {
 		config.Auth.DefaultRefreshTokenExp = 2592000 // 30 days in seconds
+	}
+	if config.Auth.DefaultAdminEmail == "" {
+		config.Auth.DefaultAdminEmail = "admin@example.com"
+	}
+	if config.Auth.DefaultAdminUsername == "" {
+		config.Auth.DefaultAdminUsername = "Admin"
+	}
+	if config.Auth.DefaultAdminPassword == "" {
+		config.Auth.DefaultAdminPassword = "admin123456"
 	}
 
 	return &config, nil
