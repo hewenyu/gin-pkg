@@ -7,7 +7,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"os"
 	"sort"
 	"strconv"
 	"testing"
@@ -17,14 +19,30 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
-const (
-	// 配置测试环境
-	baseURL          = "http://localhost:8080/api/v1"
-	signatureSecret  = "your-signature-secret-key-change-this" // 配置中设置的签名密钥
-	timestampFormat  = time.RFC3339
-	defaultAdminUser = "Admin"
-	defaultAdminPass = "admin123456"
+// 配置测试环境
+var (
+	baseURL           = "http://localhost:8080/api/v1"
+	signatureSecret   = "your-signature-secret-key-change-this" // 配置中设置的签名密钥
+	timestampFormat   = time.RFC3339
+	defaultAdminEmail = "admin@example.com"
+	defaultAdminPass  = "admin123456"
 )
+
+func init() {
+	// 从环境变量加载配置
+	if url := os.Getenv("API_BASE_URL"); url != "" {
+		baseURL = url
+	}
+	if secret := os.Getenv("API_SIGNATURE_SECRET"); secret != "" {
+		signatureSecret = secret
+	}
+	if adminEmail := os.Getenv("API_ADMIN_EMAIL"); adminEmail != "" {
+		defaultAdminEmail = adminEmail
+	}
+	if adminPass := os.Getenv("API_ADMIN_PASS"); adminPass != "" {
+		defaultAdminPass = adminPass
+	}
+}
 
 // ApiTestSuite 定义测试套件
 type ApiTestSuite struct {
@@ -103,7 +121,7 @@ func (suite *ApiTestSuite) SetupSuite() {
 	suite.nonce = nonce
 
 	// 尝试登录管理员
-	err = suite.login(defaultAdminUser, defaultAdminPass)
+	err = suite.login(defaultAdminEmail, defaultAdminPass)
 	if err != nil {
 		// 如果登录失败，可能需要先创建管理员账户
 		suite.T().Logf("Admin login failed, will try to create one: %v", err)
@@ -112,10 +130,14 @@ func (suite *ApiTestSuite) SetupSuite() {
 
 // 获取随机数
 func (suite *ApiTestSuite) getNonce() (string, error) {
-	timestamp := time.Now().Format(timestampFormat)
+	// 使用毫秒级时间戳
+	timestamp := strconv.FormatInt(time.Now().UnixMilli(), 10)
+
+	// 构建带时间戳参数的URL
+	nonceURL := fmt.Sprintf("%s/auth/nonce?timestamp=%s", baseURL, timestamp)
 
 	// 创建请求
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s/auth/nonce", baseURL), nil)
+	req, err := http.NewRequest("GET", nonceURL, nil)
 	if err != nil {
 		return "", err
 	}
@@ -129,6 +151,14 @@ func (suite *ApiTestSuite) getNonce() (string, error) {
 		return "", err
 	}
 	defer resp.Body.Close()
+
+	// 检查响应状态码
+	if resp.StatusCode != http.StatusOK {
+		// 读取并记录错误响应内容以便调试
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("failed to get nonce, status code: %d, response: %s",
+			resp.StatusCode, string(bodyBytes))
+	}
 
 	// 解析响应
 	var nonceResp NonceResponse
@@ -179,6 +209,20 @@ func (suite *ApiTestSuite) sendSecureRequest(method, path string, body interface
 	var reqBody []byte
 	var err error
 
+	// 构建签名参数
+	params := map[string]string{
+		"timestamp": time.Now().Format(timestampFormat),
+		"nonce":     suite.nonce,
+	}
+
+	// 添加请求体参数到签名计算（如果是简单的map[string]string类型）
+	if bodyMap, ok := body.(map[string]string); ok && body != nil {
+		for k, v := range bodyMap {
+			// 只有简单的字符串值才添加到签名参数中
+			params[k] = v
+		}
+	}
+
 	// 序列化请求体（如果有）
 	if body != nil {
 		reqBody, err = json.Marshal(body)
@@ -196,20 +240,11 @@ func (suite *ApiTestSuite) sendSecureRequest(method, path string, body interface
 	// 设置内容类型
 	req.Header.Set("Content-Type", "application/json")
 
-	// 获取当前时间戳
-	timestamp := time.Now().Format(timestampFormat)
-
-	// 构建签名参数
-	params := map[string]string{
-		"timestamp": timestamp,
-		"nonce":     suite.nonce,
-	}
-
 	// 计算签名
 	signature := calculateSignature(params, signatureSecret)
 
 	// 添加安全头
-	req.Header.Set("X-Timestamp", timestamp)
+	req.Header.Set("X-Timestamp", params["timestamp"])
 	req.Header.Set("X-Nonce", suite.nonce)
 	req.Header.Set("X-Sign", signature)
 
@@ -326,7 +361,7 @@ func (suite *ApiTestSuite) TestC_RefreshToken() {
 
 	// 确保已登录
 	if suite.refreshToken == "" {
-		err := suite.login(defaultAdminUser, defaultAdminPass)
+		err := suite.login(defaultAdminEmail, defaultAdminPass)
 		assert.NoError(t, err)
 	}
 
@@ -367,7 +402,7 @@ func (suite *ApiTestSuite) TestD_GetCurrentUser() {
 
 	// 确保已登录
 	if suite.accessToken == "" {
-		err := suite.login(defaultAdminUser, defaultAdminPass)
+		err := suite.login(defaultAdminEmail, defaultAdminPass)
 		assert.NoError(t, err)
 	}
 
@@ -394,7 +429,7 @@ func (suite *ApiTestSuite) TestE_UpdateUser() {
 
 	// 确保已登录
 	if suite.accessToken == "" {
-		err := suite.login(defaultAdminUser, defaultAdminPass)
+		err := suite.login(defaultAdminEmail, defaultAdminPass)
 		assert.NoError(t, err)
 	}
 

@@ -55,7 +55,10 @@ done
 
 # 检查API服务是否可用
 echo "正在检查API服务可用性..."
-HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X GET "$API_URL/auth/nonce")
+# 生成标准Unix时间戳并转换为毫秒级
+TIMESTAMP=$(date +%s)
+TIMESTAMP="${TIMESTAMP}000"
+HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X GET "$API_URL/auth/nonce?timestamp=$TIMESTAMP" -H "X-Timestamp: $TIMESTAMP")
 
 if [[ $HTTP_CODE != 2* ]] && [[ $HTTP_CODE != 4* ]]; then
     echo "错误: 无法连接到API服务: $API_URL"
@@ -64,6 +67,15 @@ if [[ $HTTP_CODE != 2* ]] && [[ $HTTP_CODE != 4* ]]; then
 fi
 
 echo "API服务可用: $API_URL ✓"
+
+# 读取配置文件中的安全密钥
+if [ "$API_SECRET" = "your-signature-secret-key-change-this" ]; then
+    CONFIG_SECRET=$(grep -E "signatureSecret:\s+\"[^\"]+\"" ../config/default.yaml | awk -F'"' '{print $2}')
+    if [ -n "$CONFIG_SECRET" ]; then
+        API_SECRET="$CONFIG_SECRET"
+        echo "从配置文件读取签名密钥 ✓"
+    fi
+fi
 
 # 准备运行测试
 echo "准备运行API测试..."
@@ -85,6 +97,10 @@ export API_SIGNATURE_SECRET="$API_SECRET"
 
 # 显示测试信息
 echo "API URL: $API_URL"
+if [ "$VERBOSE" = true ]; then
+    echo "API SECRET: $API_SECRET"
+    echo "时间戳(毫秒): $TIMESTAMP"
+fi
 echo "测试过滤器: ${TEST_FILTER:-全部测试}"
 echo "详细模式: $VERBOSE"
 echo
@@ -104,6 +120,16 @@ echo "测试执行完成，用时: ${DURATION}s"
 
 if [ $TEST_RESULT -ne 0 ]; then
     echo "测试失败!"
+    # 显示失败的可能原因
+    echo "可能的失败原因:"
+    echo "1. 签名密钥不匹配，当前使用: $API_SECRET"
+    echo "2. 默认管理员账户不存在或密码不匹配"
+    echo "3. 时间戳格式不正确"
+    echo
+    echo "尝试手动测试请求:"
+    TIMESTAMP=$(date +%s)
+    TIMESTAMP="${TIMESTAMP}000"
+    echo "curl -v \"$API_URL/auth/nonce?timestamp=$TIMESTAMP\" -H \"X-Timestamp: $TIMESTAMP\""
     exit 1
 else
     echo "测试成功! ✓"
