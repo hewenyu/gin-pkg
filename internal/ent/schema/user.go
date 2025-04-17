@@ -18,25 +18,35 @@ func (User) Fields() []ent.Field {
 		field.String("id").
 			Immutable().
 			Unique().
-			Default(uuid.New().String()),
+			NotEmpty().
+			DefaultFunc(func() string {
+				return uuid.New().String()
+			}).Comment("主键"),
 		field.String("email").
 			Unique().
-			NotEmpty(),
+			NotEmpty().
+			Comment("邮箱"),
 		field.String("username").
 			Unique().
-			NotEmpty(),
+			NotEmpty().
+			Comment("用户名"),
 		field.String("password_hash").
 			NotEmpty().
-			Sensitive(),
+			Sensitive().
+			Comment("密码"),
 		field.String("role").
-			Default("user"),
+			Default("user").
+			Comment("角色"),
 		field.Bool("active").
-			Default(true),
+			Default(true).
+			Comment("是否激活"),
 		field.String("avatar_url").
-			Optional(),
+			Optional().
+			Comment("头像"),
 		field.Time("last_login").
 			Optional().
-			Nillable(),
+			Nillable().
+			Comment("最后登录时间"),
 	}
 }
 
