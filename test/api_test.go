@@ -12,6 +12,7 @@ import (
 	"os"
 	"sort"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -21,8 +22,8 @@ import (
 
 // 配置测试环境
 var (
-	baseURL           = "http://localhost:8080/api/v1"
-	signatureSecret   = "your-signature-secret-key-change-this" // 配置中设置的签名密钥
+	baseURL           = "http://localhost:8080"
+	signatureSecret   = "your-signature-secret-key-change-this" // 确保与服务器配置完全匹配
 	timestampFormat   = time.RFC3339
 	defaultAdminEmail = "admin@example.com"
 	defaultAdminPass  = "admin123456"
@@ -134,7 +135,7 @@ func (suite *ApiTestSuite) getNonce() (string, error) {
 	timestamp := strconv.FormatInt(time.Now().UnixMilli(), 10)
 
 	// 构建带时间戳参数的URL
-	nonceURL := fmt.Sprintf("%s/auth/nonce?timestamp=%s", baseURL, timestamp)
+	nonceURL := fmt.Sprintf("%s/api/v1/auth/nonce?timestamp=%s", baseURL, timestamp)
 
 	// 创建请求
 	req, err := http.NewRequest("GET", nonceURL, nil)
@@ -174,24 +175,25 @@ func calculateSignature(params map[string]string, secret string) string {
 	// 按键排序
 	var keys []string
 	for k := range params {
-		keys = append(keys, k)
+		if k != "sign" { // 排除sign参数本身
+			keys = append(keys, k)
+		}
 	}
 	sort.Strings(keys)
 
 	// 构建签名字符串
-	var signStr string
+	var paramPairs []string
 	for _, k := range keys {
-		signStr += k + "=" + params[k] + "&"
+		paramPairs = append(paramPairs, fmt.Sprintf("%s=%s", k, params[k]))
 	}
+	paramString := strings.Join(paramPairs, "&")
 
-	// 移除末尾的 "&"
-	if len(signStr) > 0 {
-		signStr = signStr[:len(signStr)-1]
-	}
+	// 输出调试信息
+	fmt.Printf("DEBUG: 签名字符串: %s\n", paramString)
 
 	// 计算HMAC-SHA256
 	h := hmac.New(sha256.New, []byte(secret))
-	h.Write([]byte(signStr))
+	h.Write([]byte(paramString))
 	return hex.EncodeToString(h.Sum(nil))
 }
 
@@ -211,7 +213,7 @@ func (suite *ApiTestSuite) sendSecureRequest(method, path string, body interface
 
 	// 构建签名参数
 	params := map[string]string{
-		"timestamp": time.Now().Format(timestampFormat),
+		"timestamp": strconv.FormatInt(time.Now().UnixMilli(), 10), // 使用毫秒时间戳
 		"nonce":     suite.nonce,
 	}
 
@@ -231,8 +233,10 @@ func (suite *ApiTestSuite) sendSecureRequest(method, path string, body interface
 		}
 	}
 
-	// 创建请求
-	req, err := http.NewRequest(method, fmt.Sprintf("%s%s", baseURL, path), bytes.NewBuffer(reqBody))
+	// 创建请求 - 添加 "/api/v1" 前缀
+	fullURL := fmt.Sprintf("%s/api/v1%s", baseURL, path)
+	fmt.Printf("DEBUG: 发送请求 - %s %s\n", method, fullURL)
+	req, err := http.NewRequest(method, fullURL, bytes.NewBuffer(reqBody))
 	if err != nil {
 		return nil, err
 	}
@@ -248,6 +252,13 @@ func (suite *ApiTestSuite) sendSecureRequest(method, path string, body interface
 	req.Header.Set("X-Nonce", suite.nonce)
 	req.Header.Set("X-Sign", signature)
 
+	// 打印调试信息
+	fmt.Printf("DEBUG: 请求头 - Timestamp: %s, Nonce: %s, Sign: %s\n",
+		params["timestamp"], suite.nonce, signature)
+	if body != nil {
+		fmt.Printf("DEBUG: 请求体 - %s\n", string(reqBody))
+	}
+
 	// 添加认证头（如果需要）
 	if authRequired && suite.accessToken != "" {
 		req.Header.Set("Authorization", "Bearer "+suite.accessToken)
@@ -257,7 +268,24 @@ func (suite *ApiTestSuite) sendSecureRequest(method, path string, body interface
 	suite.nonce = ""
 
 	// 发送请求
-	return suite.client.Do(req)
+	resp, err := suite.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	// 调试响应信息
+	fmt.Printf("DEBUG: 响应状态码 - %d\n", resp.StatusCode)
+
+	// 如果是错误响应，打印错误消息
+	if resp.StatusCode >= 400 {
+		respBody, _ := io.ReadAll(resp.Body)
+		fmt.Printf("DEBUG: 错误响应 - %s\n", string(respBody))
+
+		// 重置响应体，以便后续能够再次读取
+		resp.Body = io.NopCloser(bytes.NewBuffer(respBody))
+	}
+
+	return resp, nil
 }
 
 // 注册测试
