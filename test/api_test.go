@@ -20,11 +20,42 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
+// 从环境变量或配置文件中加载签名密钥
+func loadSignatureSecret() string {
+	// 首先尝试从环境变量加载
+	if envSecret := os.Getenv("API_SIGNATURE_SECRET"); envSecret != "" {
+		return envSecret
+	}
+
+	// 尝试从配置文件加载
+	configFile := "../config/default.yaml"
+	content, err := os.ReadFile(configFile)
+	if err == nil {
+		// 简单解析，查找signatureSecret行
+		lines := strings.Split(string(content), "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "signatureSecret:") {
+				parts := strings.Split(line, ":")
+				if len(parts) >= 2 {
+					secret := strings.TrimSpace(parts[1])
+					// 去除引号
+					secret = strings.Trim(secret, "\"'")
+					fmt.Printf("从配置文件加载签名密钥: %s\n", secret)
+					return secret
+				}
+			}
+		}
+	}
+
+	// 默认值
+	return "your-signature-secret-key-change-this"
+}
+
 // 配置测试环境
 var (
 	baseURL           = "http://localhost:8080"
-	signatureSecret   = "your-signature-secret-key-change-this" // 确保与服务器配置完全匹配
-	timestampFormat   = time.RFC3339
+	signatureSecret   = loadSignatureSecret() // 从配置文件或环境变量加载
 	defaultAdminEmail = "admin@example.com"
 	defaultAdminPass  = "admin123456"
 )
@@ -33,13 +64,6 @@ func init() {
 	// 从环境变量加载配置
 	if url := os.Getenv("API_BASE_URL"); url != "" {
 		baseURL = url
-	}
-	if secret := os.Getenv("API_SIGNATURE_SECRET"); secret != "" {
-		signatureSecret = secret
-	} else {
-		// 如果环境变量中没有设置，则使用配置文件中的默认值
-		fmt.Println("注意: 使用默认签名密钥，如果服务器配置不同可能导致签名验证失败")
-		fmt.Println("请设置环境变量 API_SIGNATURE_SECRET 为正确的签名密钥")
 	}
 	if adminEmail := os.Getenv("API_ADMIN_EMAIL"); adminEmail != "" {
 		defaultAdminEmail = adminEmail
@@ -536,26 +560,44 @@ func (suite *ApiTestSuite) TestG_InvalidSignature() {
 	nonce, err := suite.getNonce()
 	assert.NoError(t, err)
 
+	// 构建安全参数
+	params := map[string]string{
+		"timestamp": strconv.FormatInt(time.Now().UnixMilli(), 10),
+		"nonce":     nonce,
+	}
+
 	// 创建请求
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s/users/%s", baseURL, suite.userId), nil)
+	fullURL := fmt.Sprintf("%s/api/v1/users/me", baseURL)
+	req, err := http.NewRequest("GET", fullURL, nil)
 	assert.NoError(t, err)
 
 	// 设置内容类型
 	req.Header.Set("Content-Type", "application/json")
 
-	// 设置认证
-	req.Header.Set("Authorization", "Bearer "+suite.accessToken)
+	// 设置认证头(如果已登录)
+	if suite.accessToken != "" {
+		req.Header.Set("Authorization", "Bearer "+suite.accessToken)
+	}
 
-	// 设置时间戳和随机数，但使用错误的签名
-	timestamp := time.Now().Format(timestampFormat)
-	req.Header.Set("X-Timestamp", timestamp)
+	// 设置安全头，但使用无效的签名
+	req.Header.Set("X-Timestamp", params["timestamp"])
 	req.Header.Set("X-Nonce", nonce)
 	req.Header.Set("X-Sign", "invalid-signature")
+
+	// 输出调试信息
+	fmt.Printf("DEBUG: 发送请求(无效签名) - GET %s\n", fullURL)
+	fmt.Printf("DEBUG: 请求头 - Timestamp: %s, Nonce: %s, Sign: %s\n",
+		params["timestamp"], nonce, "invalid-signature")
 
 	// 发送请求
 	resp, err := suite.client.Do(req)
 	assert.NoError(t, err)
 	defer resp.Body.Close()
+
+	// 输出响应信息
+	bodyBytes, _ := io.ReadAll(resp.Body)
+	fmt.Printf("DEBUG: 响应状态码 - %d\n", resp.StatusCode)
+	fmt.Printf("DEBUG: 响应内容 - %s\n", string(bodyBytes))
 
 	// 验证响应状态码应为错误请求
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
