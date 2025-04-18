@@ -210,33 +210,6 @@ func (suite *ApiTestSuite) getNonce() (string, error) {
 	return nonceResp.Nonce, nil
 }
 
-// // 计算签名
-// func calculateSignature(params map[string]string, secret string) string {
-// 	// 按键排序
-// 	var keys []string
-// 	for k := range params {
-// 		if k != "sign" { // 排除sign参数本身
-// 			keys = append(keys, k)
-// 		}
-// 	}
-// 	sort.Strings(keys)
-
-// 	// 构建签名字符串
-// 	var paramPairs []string
-// 	for _, k := range keys {
-// 		paramPairs = append(paramPairs, fmt.Sprintf("%s=%s", k, params[k]))
-// 	}
-// 	paramString := strings.Join(paramPairs, "&")
-
-// 	// 输出调试信息
-// 	fmt.Printf("DEBUG: 签名字符串: %s\n", paramString)
-
-// 	// 计算HMAC-SHA256
-// 	h := hmac.New(sha256.New, []byte(secret))
-// 	h.Write([]byte(paramString))
-// 	return hex.EncodeToString(h.Sum(nil))
-// }
-
 // 发送带安全头的请求
 func (suite *ApiTestSuite) sendSecureRequest(method, path string, body interface{}, authRequired bool) (*http.Response, error) {
 	// 获取新的随机数（如果当前没有）
