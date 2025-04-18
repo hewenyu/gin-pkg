@@ -8,4 +8,5 @@ type SecurityService interface {
 	ValidateTimestamp(timestamp string, validityWindow time.Duration) error
 	ValidateSignature(params map[string]string, signature string) error
 	ValidateNonce(nonce string) error
+	GetSignatureSecret() string
 }

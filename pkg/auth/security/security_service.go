@@ -124,6 +124,11 @@ func (s *DefaultSecurityService) ValidateNonce(nonce string) error {
 	return nil
 }
 
+// GetSignatureSecret returns the signature secret key used for signing
+func (s *DefaultSecurityService) GetSignatureSecret() string {
+	return s.signatureSecret
+}
+
 // GenerateSignature creates a signature for the given parameters
 func GenerateSignature(params map[string]string, secret string) string {
 	// Sort parameters by key
