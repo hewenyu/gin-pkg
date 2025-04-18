@@ -1,6 +1,9 @@
 package middleware
 
 import (
+	"bytes"
+	"encoding/json"
+	"io"
 	"net/http"
 	"time"
 
@@ -61,7 +64,7 @@ func SecurityMiddleware(securityService security.SecurityService, timestampWindo
 
 		// Add query parameters
 		for k, v := range c.Request.URL.Query() {
-			if len(v) > 0 {
+			if len(v) > 0 && k != "sign" {
 				params[k] = v[0]
 			}
 		}
@@ -70,19 +73,42 @@ func SecurityMiddleware(securityService security.SecurityService, timestampWindo
 		if c.Request.Method != http.MethodGet {
 			if err := c.Request.ParseForm(); err == nil {
 				for k, v := range c.Request.PostForm {
-					if len(v) > 0 {
+					if len(v) > 0 && k != "sign" {
 						params[k] = v[0]
 					}
 				}
 			}
 		}
 
-		// Add parameters from headers if they exist
-		if timestampHeader := c.GetHeader("X-Timestamp"); timestampHeader != "" {
-			params["timestamp"] = timestampHeader
+		// 为非GET请求尝试从JSON请求体中获取参数
+		if c.Request.Method != http.MethodGet && c.Request.Header.Get("Content-Type") == "application/json" {
+			// 保存请求体
+			requestBody, err := c.GetRawData()
+			if err == nil && len(requestBody) > 0 {
+				// 重新设置请求体，以便后续处理
+				c.Request.Body = io.NopCloser(bytes.NewBuffer(requestBody))
+
+				// 解析JSON请求体
+				var bodyMap map[string]interface{}
+				if json.Unmarshal(requestBody, &bodyMap) == nil {
+					// 将JSON请求体中的参数添加到签名验证参数中
+					for k, v := range bodyMap {
+						// 只添加字符串值
+						if strValue, ok := v.(string); ok {
+							params[k] = strValue
+						}
+					}
+				}
+			}
 		}
-		if nonceHeader := c.GetHeader("X-Nonce"); nonceHeader != "" {
-			params["nonce"] = nonceHeader
+
+		// 检查时间戳和随机数是否来自请求头
+		// 如果是，则使用适合签名计算的参数名添加到params
+		if c.GetHeader("X-Timestamp") != "" {
+			params["timestamp"] = timestamp
+		}
+		if c.GetHeader("X-Nonce") != "" {
+			params["nonce"] = nonce
 		}
 
 		// Validate signature
